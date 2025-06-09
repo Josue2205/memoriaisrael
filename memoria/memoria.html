@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juego de Memoria Avanzado</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #6e8efb, #a777e3);
+            color: #fff;
+            overflow: hidden;
+        }
+        #game-container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 600px;
+            width: 90%;
+            color: #333;
+        }
+        #game-area {
+            display: grid;
+            grid-template-columns: repeat(4, 80px);
+            gap: 10px;
+            margin: 20px auto;
+            justify-content: center;
+        }
+        .card {
+            width: 80px;
+            height: 80px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            cursor: pointer;
+            transition: transform 0.3s, background 0.3s;
+        }
+        .card:hover {
+            transform: scale(1.05);
+        }
+        .card.correct {
+            background: #28a745;
+            color: #fff;
+        }
+        .card.incorrect {
+            background: #dc3545;
+            color: #fff;
+        }
+        .sequence-container {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+        .sequence-card {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+        }
+        #start-button, #next-button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+            transition: background 0.3s;
+        }
+        #start-button:hover, #next-button:hover {
+            background: #0056b3;
+        }
+        #timer {
+            font-size: 18px;
+            margin: 10px 0;
+        }
+        #progress {
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        #feedback {
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        #results {
+            display: none;
+            margin-top: 20px;
+            text-align: left;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        #game-container {
+            animation: fadeIn 1s ease-in;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <h1>Juego de Memoria Avanzado</h1>
+        <div id="progress">Ejercicio 1 de 15</div>
+        <div id="timer">Tiempo restante: 1.5s</div>
+        <div id="feedback"></div>
+        <div id="game-area"></div>
+        <button id="start-button">Iniciar Juego</button>
+        <button id="next-button" style="display: none;">Siguiente Ejercicio</button>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const gameArea = document.getElementById('game-area');
+        const startButton = document.getElementById('start-button');
+        const nextButton = document.getElementById('next-button');
+        const timerDisplay = document.getElementById('timer');
+        const progressDisplay = document.getElementById('progress');
+        const feedbackDisplay = document.getElementById('feedback');
+        const resultsDisplay = document.getElementById('results');
+        let currentExercise = 0;
+        let correctAnswers = 0;
+        let reactionTimes = [];
+        let startTime;
+        let timer;
+        let exerciseData = [];
+        let correctOption;
+        let currentType;
+
+        const exercises = [
+            // Single color memory
+            { type: 'color', generate: () => {
+                const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+                const selected = colors[Math.floor(Math.random() * colors.length)];
+                return { display: selected, options: [selected, ...getRandomColors(colors, selected, 3)] };
+            }},
+            // Color sequence memory
+            { type: 'color_sequence', generate: () => {
+                const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+                const sequenceLength = Math.floor(Math.random() * 3) + 2; // 2-4 colors
+                const sequence = Array.from({ length: sequenceLength }, () => colors[Math.floor(Math.random() * colors.length)]);
+                const options = [sequence, ...getRandomColorSequences(colors, sequence, 3, sequenceLength)];
+                return { display: sequence, options: options };
+            }},
+            // Shape memory
+            { type: 'shape', generate: () => {
+                const shapes = ['circle', 'square', 'triangle', 'star'];
+                const selected = shapes[Math.floor(Math.random() * shapes.length)];
+                return { display: selected, options: [selected, ...getRandomShapes(shapes, selected, 3)] };
+            }},
+            // Number memory
+            { type: 'number', generate: () => {
+                const number = Math.floor(Math.random() * 100);
+                return { display: number, options: [number, ...getRandomNumbers(number, 3)] };
+            }},
+            // Pattern memory
+            { type: 'pattern', generate: () => {
+                const patterns = ['●●○', '○●●', '●○●', '○○●'];
+                const selected = patterns[Math.floor(Math.random() * patterns.length)];
+                return { display: selected, options: [selected, ...getRandomPatterns(patterns, selected, 3)] };
+            }}
+        ];
+
+        function getRandomColors(colors, exclude, count) {
+            let result = [];
+            let available = colors.filter(c => c !== exclude);
+            for (let i = 0; i < count; i++) {
+                const idx = Math.floor(Math.random() * available.length);
+                result.push(available.splice(idx, 1)[0]);
+            }
+            return result;
+        }
+
+        function getRandomColorSequences(colors, exclude, count, length) {
+            let result = [];
+            for (let i = 0; i < count; i++) {
+                let seq;
+                do {
+                    seq = Array.from({ length }, () => colors[Math.floor(Math.random() * colors.length)]);
+                } while (JSON.stringify(seq) === JSON.stringify(exclude) || result.some(r => JSON.stringify(r) === JSON.stringify(seq)));
+                result.push(seq);
+            }
+            return result;
+        }
+
+        function getRandomShapes(shapes, exclude, count) {
+            let result = [];
+            let available = shapes.filter(s => s !== exclude);
+            for (let i = 0; i < count; i++) {
+                const idx = Math.floor(Math.random() * available.length);
+                result.push(available.splice(idx, 1)[0]);
+            }
+            return result;
+        }
+
+        function getRandomNumbers(exclude, count) {
+            let result = [];
+            for (let i = 0; i < count; i++) {
+                let num;
+                do {
+                    num = Math.floor(Math.random() * 100);
+                } while (num === exclude || result.includes(num));
+                result.push(num);
+            }
+            return result;
+        }
+
+        function getRandomPatterns(patterns, exclude, count) {
+            let result = [];
+            let available = patterns.filter(p => p !== exclude);
+            for (let i = 0; i < count; i++) {
+                const idx = Math.floor(Math.random() * available.length);
+                result.push(available.splice(idx, 1)[0]);
+            }
+            return result;
+        }
+
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function getShapeSymbol(shape) {
+            switch (shape) {
+                case 'circle': return '●';
+                case 'square': return '■';
+                case 'triangle': return '▲';
+                case 'star': return '★';
+                default: return '';
+            }
+        }
+
+        function startGame() {
+            currentExercise = 0;
+            correctAnswers = 0;
+            reactionTimes = [];
+            exerciseData = [];
+            startButton.style.display = 'none';
+            feedbackDisplay.textContent = '';
+            nextExercise();
+        }
+
+        function nextExercise() {
+            if (currentExercise >= 15) {
+                endGame();
+                return;
+            }
+            currentExercise++;
+            progressDisplay.textContent = `Ejercicio ${currentExercise} de 15`;
+            nextButton.style.display = 'none';
+            feedbackDisplay.textContent = 'Memoriza el elemento mostrado...';
+            gameArea.innerHTML = '';
+
+            const exercise = exercises[Math.floor(Math.random() * exercises.length)];
+            const data = exercise.generate();
+            currentType = exercise.type;
+            exerciseData.push({ type: exercise.type, correct: data.display });
+
+            const displayTime = 1.5 - (currentExercise * 0.08); // Decrease from 1.5s to 0.3s
+            timerDisplay.textContent = `Tiempo restante: ${displayTime.toFixed(1)}s`;
+
+            const displayElement = document.createElement('div');
+            if (exercise.type === 'color_sequence') {
+                displayElement.className = 'sequence-container';
+                data.display.forEach(color => {
+                    const seqCard = document.createElement('div');
+                    seqCard.className = 'sequence-card';
+                    seqCard.style.background = color;
+                    displayElement.appendChild(seqCard);
+                });
+            } else {
+                displayElement.className = 'card';
+                if (exercise.type === 'color') {
+                    displayElement.style.background = data.display;
+                    displayElement.textContent = '';
+                } else if (exercise.type === 'shape') {
+                    displayElement.textContent = getShapeSymbol(data.display);
+                } else {
+                    displayElement.textContent = data.display;
+                }
+            }
+            gameArea.appendChild(displayElement);
+
+            let timeLeft = displayTime;
+            timer = setInterval(() => {
+                timeLeft -= 0.1;
+                timerDisplay.textContent = `Tiempo restante: ${timeLeft.toFixed(1)}s`;
+                if (timeLeft <= 0) {
+                    clearInterval(timer);
+                    showOptions(data.options, data.display, exercise.type);
+                }
+            }, 100);
+        }
+
+        function showOptions(options, correct, type) {
+            gameArea.innerHTML = '';
+            correctOption = correct;
+            const shuffledOptions = shuffle([...options]);
+            startTime = performance.now();
+            feedbackDisplay.textContent = 'Selecciona la opción correcta...';
+
+            shuffledOptions.forEach(option => {
+                const card = document.createElement('div');
+                if (type === 'color_sequence') {
+                    card.className = 'sequence-container';
+                    option.forEach(color => {
+                        const seqCard = document.createElement('div');
+                        seqCard.className = 'sequence-card';
+                        seqCard.style.background = color;
+                        card.appendChild(seqCard);
+                    });
+                    card.dataset.value = JSON.stringify(option);
+                } else {
+                    card.className = 'card';
+                    if (type === 'color') {
+                        card.style.background = option;
+                        card.textContent = '';
+                    } else if (type === 'shape') {
+                        card.textContent = getShapeSymbol(option);
+                        card.dataset.value = option;
+                    } else {
+                        card.textContent = option;
+                    }
+                }
+                card.addEventListener('click', () => handleSelection(option, correct, type));
+                gameArea.appendChild(card);
+            });
+        }
+
+        function handleSelection(selected, correct, type) {
+            const reactionTime = (performance.now() - startTime) / 1000;
+            reactionTimes.push(reactionTime);
+            const isCorrect = type === 'color_sequence' ? JSON.stringify(selected) === JSON.stringify(correct) : selected === correct;
+            if (isCorrect) correctAnswers++;
+            exerciseData[exerciseData.length - 1].reactionTime = reactionTime;
+            exerciseData[exerciseData.length - 1].isCorrect = isCorrect;
+
+            const cards = gameArea.querySelectorAll('.card, .sequence-container');
+            cards.forEach(card => {
+                let cardValue = type === 'shape' ? card.dataset.value : type === 'color_sequence' ? card.dataset.value : card.textContent || card.style.background;
+                let correctValue = type === 'color_sequence' ? JSON.stringify(correct) : correct;
+                let selectedValue = type === 'color_sequence' ? JSON.stringify(selected) : selected;
+                if (cardValue === correctValue) {
+                    card.classList.add('correct');
+                } else if (cardValue === selectedValue) {
+                    card.classList.add(isCorrect ? 'correct' : 'incorrect');
+                }
+                card.style.pointerEvents = 'none';
+            });
+
+            feedbackDisplay.textContent = isCorrect ? '¡Correcto!' : 'Incorrecto, intenta de nuevo en el siguiente.';
+            nextButton.style.display = 'block';
+        }
+
+        function endGame() {
+            gameArea.innerHTML = '';
+            timerDisplay.textContent = '';
+            feedbackDisplay.textContent = '';
+            nextButton.style.display = 'none';
+            const accuracy = (correctAnswers / 15) * 100;
+            const avgReactionTime = reactionTimes.reduce((a, b) => a + b, 0) / reactionTimes.length;
+
+            let memoryAssessment = '';
+            let strengths = [];
+            let improvements = [];
+
+            if (accuracy >= 80) {
+                memoryAssessment = 'Tu memoria visual es excepcional, especialmente considerando los tiempos extremadamente cortos. Tienes una capacidad sobresaliente para retener estímulos visuales bajo presión intensa.';
+                strengths.push('Alta precisión en la retención de colores, secuencias de colores, formas, números y patrones.');
+                if (avgReactionTime < 1.2) strengths.push('Tiempo de reacción extremadamente rápido, indicando un procesamiento visual de élite.');
+            } else if (accuracy >= 50) {
+                memoryAssessment = 'Tu memoria visual es sólida, pero los tiempos cortos representan un desafío. Puedes retener información visual, pero hay áreas para mejorar.';
+                strengths.push('Capacidad moderada para recordar estímulos visuales bajo presión.');
+                improvements.push('Practica con tiempos aún más cortos para mejorar la retención rápida.');
+                if (avgReactionTime > 1.5) improvements.push('Intenta reaccionar más rápido para optimizar el procesamiento bajo presión.');
+            } else {
+                memoryAssessment = 'Tu memoria visual enfrenta dificultades con tiempos muy cortos. Necesitas trabajo para mejorar la retención visual a corto plazo.';
+                improvements.push('Realiza ejercicios diarios de memoria visual con tiempos reducidos, como secuencias rápidas.');
+                improvements.push('Reduce distracciones para mejorar la concentración en estímulos breves.');
+                if (avgReactionTime > 2) improvements.push('Trabaja en la velocidad de procesamiento con ejercicios cronometrados.');
+            }
+
+            // Type-specific analysis
+            const types = ['color', 'color_sequence', 'shape', 'number', 'pattern'];
+            types.forEach(type => {
+                const typeExercises = exerciseData.filter(e => e.type === type);
+                const typeCorrect = typeExercises.filter(e => e.isCorrect).length;
+                const typeAccuracy = typeExercises.length ? (typeCorrect / typeExercises.length) * 100 : 0;
+                if (typeAccuracy >= 80) {
+                    strengths.push(`Memoria sobresaliente para ${type === 'color' ? 'colores' : type === 'color_sequence' ? 'secuencias de colores' : type === 'shape' ? 'formas' : type === 'number' ? 'números' : 'patrones'}.`);
+                } else if (typeAccuracy < 50 && typeExercises.length > 0) {
+                    improvements.push(`Mejora tu memoria para ${type === 'color' ? 'colores' : type === 'color_sequence' ? 'secuencias de colores' : type === 'shape' ? 'formas' : type === 'number' ? 'números' : 'patrones'} con ejercicios específicos.`);
+                }
+            });
+
+            resultsDisplay.innerHTML = `
+                <h2>¡Felicidades, completaste el juego!</h2>
+                <p><strong>Tus resultados:</strong></p>
+                <p>${memoryAssessment}</p>
+                <p><strong>Precisión:</strong> ${accuracy.toFixed(1)}% (${correctAnswers}/15 correctos)</p>
+                <p><strong>Tiempo de reacción promedio:</strong> ${avgReactionTime.toFixed(2)} segundos</p>
+                <p><strong>Fortalezas:</strong></p>
+                <ul>${strengths.map(s => `<li>${s}</li>`).join('')}</ul>
+                <p><strong>Áreas para mejorar:</strong></p>
+                <ul>${improvements.map(i => `<li>${i}</li>`).join('')}</ul>
+                <p>¡Sigue practicando para dominar tu memoria visual en tiempos ultrarrápidos!</p>
+            `;
+            resultsDisplay.style.display = 'block';
+            startButton.textContent = 'Jugar de Nuevo';
+            startButton.style.display = 'block';
+        }
+
+        startButton.addEventListener('click', startGame);
+        nextButton.addEventListener('click', nextExercise);
+    </script>
+</body>
+</html>s
